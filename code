@@ -1,0 +1,173 @@
+#define BLYNK_PRINT Serial
+#define BLYNK_TEMPLATE_ID "TMPL3l-333c7s"
+#define BLYNK_TEMPLATE_NAME "POWER THEFT DETECTOR"
+#define BLYNK_AUTH_TOKEN "QZvsfGk921eZOtG16I9gqACdiarfU80b"
+#include <ESP8266WiFi.h>
+#include <LiquidCrystal_I2C.h>
+#include <BlynkSimpleEsp8266.h>
+
+char ssid[] = "Project";  
+char pass[] = "123456789";
+#define S0 D5
+#define Relay D6
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+double t2 = 0;
+int16_t Units = 0;     
+int16_t Readings = 0;  
+
+
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(115200);
+  pinMode(S0, OUTPUT);
+  pinMode(Relay, OUTPUT);
+  digitalWrite(Relay, HIGH);  //OFF
+  lcd.init();
+  lcd.backlight();
+  lcd.print("Connecting");
+  lcd.setCursor(0, 1);
+  lcd.print(ssid);
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+  lcd.clear();
+  lcd.print("Connected..");
+
+  // Serial.println(" \n started");
+  // WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  // Serial.print("Connecting to Wi-Fi");
+  // lcd.clear();
+  // lcd.print("Connecting NET");
+
+  // while (WiFi.status() != WL_CONNECTED) {
+  //   Serial.print(".");
+  //   delay(300);
+  // }
+}
+bool doAlert = true;
+
+BLYNK_WRITE(V0) {
+  int pinValue = param.asInt();
+  Serial.print("V0 : ");
+  Serial.println(pinValue);
+  lcd.setCursor(12, 1);
+  if (pinValue == 0) {
+    digitalWrite(Relay, 1);
+    lcd.print("OFF");
+  } else {
+    digitalWrite(Relay, 0);
+    lcd.print("ON ");
+  }
+}
+
+void loop() {
+  Blynk.run();
+  // put your main code here, to run repeatedly:
+  float I1 = ReadCurrent_1();
+  float I2 = ReadCurrent_2();
+  Serial.println("=============");
+  Serial.print(I1);
+  Serial.print("      ");
+  Serial.println(I2);
+  Serial.println("=============");
+  float P1 = I1 * 230;
+  float P2 = I2 * 230;
+
+  Blynk.virtualWrite(V1, P1);
+  Blynk.virtualWrite(V2, P2);
+
+  lcd.clear();
+  lcd.print("P1:");
+  lcd.print(int(P1));
+  lcd.print("W P2:");
+  lcd.print(int(P2));
+  lcd.print("W");
+
+  float Diff = P1 - P2;
+  if (Diff < 0)
+    Diff = Diff * -1;
+  
+  lcd.setCursor(0,1);
+  lcd.print("Diff : ");
+  lcd.print(Diff);
+  Blynk.virtualWrite(V3, Diff);
+  if (Diff > 20) {
+    lcd.setCursor(0, 1);
+    lcd.print(" Theft Detected ");
+    if (doAlert) {
+      Blynk.logEvent("alert", "Theft Detected..!");
+      Serial.println("Theft Alert sent");
+      doAlert = false;
+    }
+  } else {
+    doAlert = true;
+  }
+  delay(1000);
+  // delay(1000);
+}
+
+float ReadCurrent_1() {
+
+  digitalWrite(S0, LOW);
+  delay(15);
+  float max_a = 0;
+  float min_a = 1024;
+  for (int i = 0; i < 50; i++) {
+    float a = analogRead(A0);
+    //    Serial.println("Iput : " + String(a));
+    if (a > max_a) {
+      max_a = a;
+    }
+    if (a < min_a) {
+      min_a = a;
+    }
+    delay(15);
+  }
+  int Aplitude = max_a - min_a;
+  Serial.print(Aplitude);
+  Serial.print("  >   ");
+
+  float I1 = Mymap(Aplitude, 4, 40, 0, 0.43);
+
+  Serial.print(I1);
+  Serial.println(" A");
+  //  return I1;
+  if (I1 < 0.1)
+    I1 = 0;
+
+  return I1;
+}
+
+float ReadCurrent_2() {
+  digitalWrite(S0, HIGH);
+  delay(15);
+  delay(15);
+  float max_a = 0;
+  float min_a = 1024;
+  for (int i = 0; i < 50; i++) {
+    float a = analogRead(A0);
+    //    Serial.println("Iput : " + String(a));
+    if (a > max_a) {
+      max_a = a;
+    }
+    if (a < min_a) {
+      min_a = a;
+    }
+    delay(15);
+  }
+  int Aplitude = max_a - min_a;
+  Serial.print(Aplitude);
+  Serial.print("  >   ");
+  // Serial.println();
+  float I1 = Mymap(Aplitude, 4, 40, 0, 0.43);
+
+  Serial.print(I1);
+  Serial.println(" A");
+  //  return I1;
+  if (I1 < 0.1)
+    I1 = 0;
+
+  return I1;
+}
+double Mymap(double x, double in_min, double in_max, double out_min, double out_max) {
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
